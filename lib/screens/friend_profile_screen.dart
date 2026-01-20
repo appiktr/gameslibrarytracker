@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/steam_user.dart';
 import '../models/steam_game.dart';
+import '../models/local_game_data.dart';
 import '../providers/steam_provider.dart';
+import '../services/local_data_service.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final SteamUser friend;
@@ -16,12 +18,25 @@ class FriendProfileScreen extends StatefulWidget {
 
 class _FriendProfileScreenState extends State<FriendProfileScreen> {
   late Future<List<SteamGame>> _gamesFuture;
+  final LocalDataService _localDataService = LocalDataService();
+  Map<int, LocalGameData> _friendGameData = {};
 
   @override
   void initState() {
     super.initState();
     // Fetch games for this friend
     _gamesFuture = Provider.of<SteamProvider>(context, listen: false).steamService.getOwnedGames(widget.friend.steamId);
+    // Fetch friend's reviews/notes
+    _loadFriendGameData();
+  }
+
+  Future<void> _loadFriendGameData() async {
+    final data = await _localDataService.getAllLocalData(widget.friend.steamId);
+    if (mounted) {
+      setState(() {
+        _friendGameData = data;
+      });
+    }
   }
 
   @override
@@ -88,32 +103,118 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       itemCount: games.length,
                       itemBuilder: (context, index) {
                         final game = games[index];
+                        final gameData = _friendGameData[game.appId];
+                        final hasReview = gameData != null && 
+                            (gameData.rating != null || 
+                             (gameData.notes != null && gameData.notes!.isNotEmpty) ||
+                             gameData.status != LocalGameStatus.none);
+
                         return Card(
                           color: const Color(0xFF2A475E),
                           margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: game.imgIconUrl.isNotEmpty
-                                  ? CachedNetworkImage(
-                                      imageUrl: game.iconUrl,
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
-                                      errorWidget: (context, url, error) =>
-                                          const Icon(Icons.videogame_asset, color: Colors.white54),
-                                    )
-                                  : const Icon(Icons.videogame_asset, size: 50, color: Colors.white54),
-                            ),
-                            title: Text(
-                              game.name,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              '${(game.playtimeForever / 60).toStringAsFixed(1)} h',
-                              style: const TextStyle(color: Colors.white70),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: game.imgIconUrl.isNotEmpty
+                                          ? CachedNetworkImage(
+                                              imageUrl: game.iconUrl,
+                                              width: 50,
+                                              height: 50,
+                                              fit: BoxFit.cover,
+                                              errorWidget: (context, url, error) =>
+                                                  const Icon(Icons.videogame_asset, color: Colors.white54),
+                                            )
+                                          : const Icon(Icons.videogame_asset, size: 50, color: Colors.white54),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            game.name,
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${(game.playtimeForever / 60).toStringAsFixed(1)} saat',
+                                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (gameData?.rating != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.star, color: Colors.amber, size: 16),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${gameData!.rating!.toInt()}/10',
+                                              style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                // Show review if exists
+                                if (hasReview) ...[
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF1B2838),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFF66C0F4).withValues(alpha: 0.3)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (gameData.status != LocalGameStatus.none)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            margin: const EdgeInsets.only(bottom: 6),
+                                            decoration: BoxDecoration(
+                                              color: _getStatusColor(gameData.status).withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              _getStatusText(gameData.status),
+                                              style: TextStyle(
+                                                color: _getStatusColor(gameData.status),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        if (gameData.notes != null && gameData.notes!.isNotEmpty)
+                                          Text(
+                                            gameData.notes!,
+                                            style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.3),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         );
@@ -127,5 +228,35 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ),
       ),
     );
+  }
+
+  Color _getStatusColor(LocalGameStatus status) {
+    switch (status) {
+      case LocalGameStatus.playing:
+        return Colors.greenAccent;
+      case LocalGameStatus.completed:
+        return Colors.blueAccent;
+      case LocalGameStatus.backlog:
+        return Colors.orangeAccent;
+      case LocalGameStatus.dropped:
+        return Colors.redAccent;
+      case LocalGameStatus.none:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(LocalGameStatus status) {
+    switch (status) {
+      case LocalGameStatus.playing:
+        return 'OYNUYOR';
+      case LocalGameStatus.completed:
+        return 'BİTİRDİ';
+      case LocalGameStatus.backlog:
+        return 'SIRADA';
+      case LocalGameStatus.dropped:
+        return 'BIRAKTI';
+      case LocalGameStatus.none:
+        return '';
+    }
   }
 }
