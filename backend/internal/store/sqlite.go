@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type SQLiteStore struct {
